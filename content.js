@@ -2,10 +2,11 @@
   'use strict';
   if (window.__mutualsLoaded) return;
   Object.defineProperty(window, '__mutualsLoaded', { value: true });
-  const { countPages, findUsers, ratePlan } = window.__mutualsCore;
+  const { countPages, findUsers, ratePlan, runWorkers, createGate } = window.__mutualsCore;
   const nativeFetch = window.fetch.bind(window);
   const records = new Map(), profiles = new Map(), ranks = new Map();
   let rankNextAt = 0;
+  let rankAllowance={remaining:null,reset:0,delayMs:1000};
   let rankJob = null, sortMode = false, rankVersion = 0, rankMessage = "";
   const TTL = 5 * 60 * 1000;
   const endpointPattern = /^\/i\/api\/graphql\/[^/]+\/FollowersYouKnow$/;
@@ -158,54 +159,71 @@
     const p=page();
     if(!p || active || rankJob || !auth || auth.viewer!==account() || collapsed || document.hidden)return;
     const order=new Map([...(records.get(p.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
-    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order,currentId:null,delayMs:1000,lastSort:performance.now(),sinceSort:0};
+    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order,currentIds:new Set(),gate:createGate(),failure:null,delayMs:1000,lastSort:performance.now(),sinceSort:0};
     const candidates=(records.get(p.handle)?.users ?? []).filter(user=>!ranking(user));
     if(!candidates.length)return;
     rankJob=job;rankMessage='';schedule();
     const headers=new Headers(auth.headers), template=structuredClone(endpoint);
     const fetchRank=async(user,cursor)=>{
-      const waitUntil=Math.max(rankNextAt,blockedUntil);
-      if(Date.now()<waitUntil){
-        if(Date.now()<blockedUntil){rankMessage='Taking a breather. Continuing when X’s allowance resets…';schedule();}
-        await new Promise(resolve=>{
-        const timer=setTimeout(done,Math.min(waitUntil-Date.now(),2147483647));
-        function done(){clearTimeout(timer);job.controller.signal.removeEventListener('abort',done);resolve();}
-        job.controller.signal.addEventListener('abort',done,{once:true});
+      await job.gate(async()=>{
+        while(true){
+          if(job.controller.signal.aborted)throw new Error('Calculation paused.');
+          if(rankAllowance.reset && Date.now()>=rankAllowance.reset){rankAllowance={remaining:null,reset:0,delayMs:1000};}
+          if(rankAllowance.remaining!==null && rankAllowance.remaining<=5)blockedUntil=Math.max(blockedUntil,rankAllowance.reset+1000);
+          const waitUntil=Math.max(rankNextAt,blockedUntil);
+          if(Date.now()>=waitUntil)break;
+          if(Date.now()<blockedUntil){rankMessage='Taking a breather. Continuing when X’s allowance resets…';schedule();}
+          await new Promise(resolve=>{
+            const timer=setTimeout(done,Math.min(waitUntil-Date.now(),2147483647));
+            function done(){clearTimeout(timer);job.controller.signal.removeEventListener('abort',done);resolve();}
+            job.controller.signal.addEventListener('abort',done,{once:true});
+          });
+        }
+        if(job.requests>=300)throw new Error('Safety limit reached. Resume when ready.');
+        job.requests++;
+        if(rankAllowance.remaining!==null)rankAllowance.remaining--;
+        rankNextAt=Date.now()+rankAllowance.delayMs;
+        rankMessage='';schedule();
       });
-      if(!job.controller.signal.aborted){rankMessage='';schedule();}
-      }
       if(job.controller.signal.aborted)throw new Error('Calculation paused.');
-      if(job.requests>=300)throw new Error('Safety limit reached. Resume when ready.');
-
+      const started=Date.now();
       const url=new URL(template.path,location.origin);
       if(!endpointPattern.test(url.pathname)||url.origin!==location.origin)throw new Error('Reconnect through X’s mutuals list.');
       url.searchParams.set('variables',JSON.stringify({userId:user.id,count:100,includePromotedContent:false,...(cursor?{cursor}:{})}));
       url.searchParams.set('features',JSON.stringify(template.features));
       if(template.fieldToggles)url.searchParams.set('fieldToggles',JSON.stringify(template.fieldToggles));
-      job.requests++;
       const response=await nativeFetch(url.href,{credentials:'same-origin',headers,signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(15000)])});
-      const pace=ratePlan(response.headers.get('x-rate-limit-remaining'),response.headers.get('x-rate-limit-reset'));
-      job.delayMs=pace.delayMs;rankNextAt=Date.now()+pace.delayMs;blockedUntil=Math.max(blockedUntil,pace.blockedUntil);
+      const remaining=response.headers.get('x-rate-limit-remaining'),reset=response.headers.get('x-rate-limit-reset');
+      if(remaining!==null && remaining!=='' && reset!==null && reset!=='' && Number.isFinite(Number(remaining)) && Number.isFinite(Number(reset)*1000) && Number(reset)*1000>Date.now()){
+        const until=Number(reset)*1000,available=Math.max(0,Number(remaining)-2);
+        if(until>rankAllowance.reset)rankAllowance={remaining:available,reset:until,delayMs:1000};
+        else if(until===rankAllowance.reset)rankAllowance.remaining=Math.min(rankAllowance.remaining??available,available);
+      }
+      const pace=ratePlan(rankAllowance.remaining,rankAllowance.reset?rankAllowance.reset/1000:null);
+      rankAllowance.delayMs=pace.delayMs;rankNextAt=Math.max(rankNextAt,started+pace.delayMs);blockedUntil=Math.max(blockedUntil,pace.blockedUntil);
       if(response.status===429)blockedUntil=Math.max(Date.now()+60000,Number(response.headers.get('x-rate-limit-reset'))*1000||0);
       if(!response.ok)throw new Error(statusMessage(response.status));
       return response.json();
     };
     try {
-      for(const user of candidates){
-        if(job.controller.signal.aborted || job.requests>=300){if(job.requests>=300)rankMessage='Safety limit reached. Resume when ready.';break;}
-        job.currentId=user.id;rankVersion++;schedule();
-        const maxPages=Math.min(2,300-job.requests);
-        const result=await countPages({first:await fetchRank(user),maxPages,signal:job.controller.signal,fetchPage:cursor=>fetchRank(user,cursor)});
-        if(job.viewer!==account() || job.controller.signal.aborted)break;
-        ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
-        while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
-        job.sinceSort++;
-        updateRankOrder();
-        rankVersion++;schedule();
-        if(!result.complete && !/page limit/.test(result.reason)){rankMessage=result.reason;break;}
-      }
-    }catch(error){rankMessage=job.controller.signal.aborted?'Calculation paused.':error.message;}
-    finally{if(job.controller.signal.aborted)rankMessage='Calculation paused.';if(rankJob===job)rankJob=null;rankVersion++;schedule();}
+      await runWorkers(candidates,3,async user=>{
+        job.currentIds.add(user.id);rankVersion++;schedule();
+        try{
+          const result=await countPages({first:await fetchRank(user),maxPages:2,signal:job.controller.signal,fetchPage:cursor=>fetchRank(user,cursor)});
+          if(job.viewer!==account() || job.controller.signal.aborted)return;
+          ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
+          while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
+          updateRankOrder();rankVersion++;schedule();
+          if(!result.complete && !/page limit/.test(result.reason))throw new Error(result.reason);
+        }catch(error){
+          if(!job.controller.signal.aborted){job.failure=error.message;job.controller.abort();}
+        }finally{job.currentIds.delete(user.id);rankVersion++;schedule();}
+      },job.controller.signal);
+    }finally{
+      if(job.failure)rankMessage=job.failure;
+      else if(job.controller.signal.aborted)rankMessage='Calculation paused.';
+      if(rankJob===job)rankJob=null;rankVersion++;schedule();
+    }
   }
 
   const css = `
@@ -239,7 +257,7 @@
   }
   function syncAccount() {
     const who = account();
-    if (who !== viewer) { active?.controller.abort();rankJob?.controller.abort(); records.clear(); profiles.clear(); ranks.clear();rankVersion++; auth = null; viewer = who; }
+    if (who !== viewer) { active?.controller.abort();rankJob?.controller.abort(); records.clear(); profiles.clear(); ranks.clear();rankAllowance={remaining:null,reset:0,delayMs:1000};rankNextAt=0;rankVersion++; auth = null; viewer = who; }
   }
   function render() {
     queued = false;
@@ -322,7 +340,7 @@
       const identity = el('div','identity'), name = el('div','name',user.name);
       if(user.verified){ const badge=el('span','tick','✓');badge.setAttribute('aria-label','Verified');name.append(badge); }
       identity.append(name,el('div','handle',user.handle?`@${user.handle}`:'Unavailable account')); row.append(avatar,identity);
-      if(sortMode){const result=ranking(user),score=el('span','connection-score',result?`${result.count.toLocaleString()}${result.complete?'':'+'}`:'—');score.title=result?`${result.count}${result.complete?'':' or more'} people you follow also follow this person${result.reason?'. '+result.reason:''}`:'Not checked';score.setAttribute('aria-label',result?`${result.count}${result.complete?'':' or more'} mutual connections`:'Not checked');if(!result){score.textContent='';score.classList.add(rankJob?.currentId===user.id?'row-spinner':'row-queued');score.setAttribute('aria-label',rankJob?.currentId===user.id?'Calculating mutual connections':'Waiting to calculate');}row.append(score);}
+      if(sortMode){const result=ranking(user),score=el('span','connection-score',result?`${result.count.toLocaleString()}${result.complete?'':'+'}`:'—');score.title=result?`${result.count}${result.complete?'':' or more'} people you follow also follow this person${result.reason?'. '+result.reason:''}`:'Not checked';score.setAttribute('aria-label',result?`${result.count}${result.complete?'':' or more'} mutual connections`:'Not checked');if(!result){score.textContent='';score.classList.add(rankJob?.currentIds.has(user.id)?'row-spinner':'row-queued');score.setAttribute('aria-label',rankJob?.currentIds.has(user.id)?'Calculating mutual connections':'Waiting to calculate');}row.append(score);}
       people.append(row);
     }
     if (users.length > visibleRows) { const more=el('button','more','Show more');more.type='button';more.onclick=()=>{visibleRows+=100;signature='';schedule();};people.append(more); }

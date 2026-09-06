@@ -63,3 +63,13 @@ Continuous ranking pacing remains to be verified against live X rate-limit heade
 Computer Use verified a short synthetic allowance reset: the queue displayed its waiting state, resumed without a click, and completed all four people (10 total fixture requests including profile pagination). A longer run showed reordered results while still calculating at 63 of 120 people. Hover and focused-row guards defer periodic reordering; completed counts and request pacing are retained. All 12 unit tests pass.
 
 Ancillary metadata was removed from the X backdrop JPEG without changing decoded pixels. Earlier history still contains the prior harmless display profile; no GPS, names, or account identifiers were present in that metadata.
+
+## Three workers — 0.4.0
+
+The browser fixture used eight fictional accounts with 2.5-second ranking responses and no rate headers. Production code with three workers completed in 9,516 ms; the same scheduler forced to one worker completed in 20,037 ms. Both sent eight ranking requests (nine requests including the profile list). Server-side metrics observed peak concurrency of exactly three and one respectively. This is approximately 2.1× faster under the chosen simulated latency, not a live-X speed claim.
+
+Reproduce with `?scenario=parallel` and `?scenario=parallel&baseline=1` on the fixture profile. `tests/one-worker.js` is a test-only concurrency override, excluded from extension builds. The gate and worker-pool tests verify serialized admission, the three-worker ceiling, unique assignment, cancellation, and recovery from rejected admission.
+
+A native live-X check was attempted but the window changed during automation; live three-worker authorization and throughput remain unverified. Fourteen unit tests and Firefox lint pass.
+
+With three workers enabled, the short-reset fixture also completed all four people automatically after its shared cooldown: 10 total requests including profile pagination. Its fast responses and common admission spacing kept observed concurrency at one, as intended; three workers do not force three simultaneous requests when latency is low.

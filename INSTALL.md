@@ -28,7 +28,7 @@ Requires Firefox engine 140+. Temporary add-ons disappear when the browser resta
 - **Search:** click the magnifying glass or press **⌘F / Ctrl+F**. Type a name, handle, or partial spelling. Search includes loaded people beyond the visible rows and sends no requests. Escape closes search. On profile pages the shortcut replaces browser Find; browser Find remains available from the browser menu.
 - **Collapse:** click **−**. Click the small Mutuals pill to reopen.
 - **Refresh / Stop:** refresh the profile’s mutuals, or stop an ongoing check.
-- **Most connected:** select once to start a continuous calculation. A spinner marks the active person, dots mark the queue, and counts appear as results arrive. **Pause** stops requests; **Resume** skips completed cached people. Switching to Default, collapsing, leaving the profile, or hiding the tab also stops calculation. No repeated batch clicks.
+- **Most connected:** select once to start a continuous calculation. Spinners mark up to three active people, dots mark the queue, and counts appear as results arrive. **Pause** stops requests; **Resume** skips completed cached people. Switching to Default, collapsing, leaving the profile, or hiding the tab also stops calculation. No repeated batch clicks.
 
 
 The number next to each person means **how many accounts you follow also follow that person**. It is not their follower count or their connections to everyone in the sidebar.
@@ -47,6 +47,6 @@ After downloading an update, extract it over the folder you loaded. On the exten
 
 **Partial count or `+`:** X may have limited requests, returned unavailable accounts, or reached this extension’s page budget. Available results remain visible. Rate limits enforce a cooldown; repeatedly clicking does not bypass it.
 
-**Taking a breather:** no click is needed. Requests adapt to X’s reported allowance, wait with five requests in reserve, and continue automatically after the reset. **Ranking paused after an error:** wait for the cooldown, then select Resume. Without rate headers, the queue waits one second after each response. Errors do not trigger automatic retries. A run stops after 300 requests as a safety limit. Same-origin tabs coordinate ranking through Web Locks where supported; other X traffic and other devices still consume allowance.
+**Taking a breather:** no click is needed. Requests adapt to X’s reported allowance, wait with five requests in reserve, and continue automatically after the reset. **Ranking paused after an error:** wait for the cooldown, then select Resume. Without rate headers, one shared queue spaces request starts one second apart, with at most three in flight. Slow responses can overlap. Errors do not trigger automatic retries. A run stops after 300 requests as a safety limit. Same-origin tabs coordinate ranking through Web Locks where supported; other X traffic and other devices still consume allowance.
 
 **Theme or layout conflict:** other X styling extensions can affect the available space. Mutuals uses the page background and an isolated sidebar, but unusually narrow layouts may cover part of X. Collapse the panel when needed.

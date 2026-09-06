@@ -93,7 +93,17 @@
     if(left<=5)return {delayMs:1000,blockedUntil:until+1000};
     return {delayMs:Math.max(750,Math.ceil((until-now)/(left-5)*1.1)),blockedUntil:0};
   }
-  const api = { parsePage, countPages, findUsers, ratePlan };
+  async function runWorkers(items, concurrency, worker, signal) {
+    let next=0;
+    await Promise.all(Array.from({length:Math.min(concurrency,items.length)},async()=>{
+      while(!signal?.aborted){const index=next++;if(index>=items.length)return;await worker(items[index],index);}
+    }));
+  }
+  function createGate() {
+    let tail=Promise.resolve();
+    return task=>{const result=tail.then(task);tail=result.catch(()=>{});return result;};
+  }
+  const api = { parsePage, countPages, findUsers, ratePlan, runWorkers, createGate };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.defineProperty(root, '__mutualsCore', { value: api, configurable: true });
 })(globalThis);

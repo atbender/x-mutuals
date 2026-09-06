@@ -53,9 +53,9 @@ If X changes its endpoint or rejects authorization, select **Open X’s mutuals 
 
 ## Most connected
 
-Select **Most connected** once to calculate the list automatically. Counts arrive one person at a time: the active row has a spinner, queued rows show quiet dots, and a thin progress line tracks completion. Use **Pause / Resume** at any time. The list reorders immediately as each person’s count arrives.
+Select **Most connected** once to calculate the list automatically. Up to three people calculate concurrently: active rows have spinners, queued rows show quiet dots, and a thin progress line tracks completion. Use **Pause / Resume** at any time. The list reorders immediately as each person’s count arrives.
 
-Requests are sequential. When X supplies rate-limit headers, pacing adapts to the remaining allowance and reset time, reserving five requests. Without headers, requests wait one second after each response. When the reported allowance reaches the reserve, calculation waits for the reset and continues automatically. Actual rate-limit errors and other failures stop the run; failed requests are not retried automatically. Completed counts are cached, so resuming skips them. Tabs use a same-origin Web Lock to prevent simultaneous ranking runs for the same signed-in account when supported.
+Three workers share one request-admission queue. Starts are spaced at least one second apart when headers are absent, allowing slow responses to overlap. When X supplies rate-limit headers, pacing adapts to the remaining allowance and reset time, preserving a five-request reserve and allowing for up to two other in-flight responses. Out-of-order responses cannot increase the known allowance within a window. When the reported allowance reaches the reserve, calculation waits for the reset and continues automatically. Actual rate-limit errors and other failures stop the run; failed requests are not retried automatically. Completed counts are cached, so resuming skips them. Tabs use a same-origin Web Lock to prevent simultaneous ranking runs for the same signed-in account when supported.
 
 Each person is limited to two pages, and a continuous run has a 300-request safety ceiling. Lower bounds show `+`; partial results are explicitly indicated. These safeguards reduce traffic but cannot guarantee avoidance of X’s limits, which may also be consumed by X itself or other tabs/devices.
 
@@ -65,7 +65,7 @@ Each person is limited to two pages, and a continuous run has a 300-request safe
 - Waits 600 ms before starting, so quick navigation can avoid a check.
 - Requests up to 100 connections per page; X may return fewer.
 - Reuses native mutual-list responses when available, including zero additional requests for an exhausted first page.
-- One check at a time per tab, sequential pages with a 750 ms pause; 50-page cap.
+- The main profile list uses sequential pages with a 750 ms pause and a 50-page cap. Ranking uses the shared three-worker scheduler described above.
 - Stops when navigating away, collapsing, hiding the tab, or pressing Stop.
 - Five-minute reuse window, at most 64 profiles per tab. Reload or account change clears results.
 - No timed refresh, automatic retries, background worker, network polling, or full follower graph crawl.

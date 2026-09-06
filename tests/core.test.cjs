@@ -72,3 +72,16 @@ test('rate pacing reserves requests and stops before exhausting the window',()=>
  assert.equal(ratePlan('1000','200',now).delayMs,750);
  assert.equal(ratePlan('garbage','200',now).delayMs,1000);
 });
+test('three workers overlap work, visit each item once, and stop taking work after abort',async()=>{
+ const {runWorkers}=require('../core.js');let active=0,peak=0;const visited=[];
+ await runWorkers([1,2,3,4,5,6],3,async value=>{visited.push(value);peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,5));active--;});
+ assert.equal(peak,3);assert.deepEqual(visited.sort(),[1,2,3,4,5,6]);
+ const c=new AbortController();const started=[];
+ await runWorkers([1,2,3,4,5,6],3,async value=>{started.push(value);c.abort();},c.signal);
+ assert.deepEqual(started,[1]);
+});
+test('admission gate serializes concurrent decisions and survives a rejected admission',async()=>{
+ const {createGate}=require('../core.js');const gate=createGate();let active=0,peak=0;
+ const jobs=Array.from({length:6},(_,i)=>gate(async()=>{peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,2));active--;if(i===1)throw new Error('stop');return i;}));
+ const results=await Promise.allSettled(jobs);assert.equal(peak,1);assert.equal(results[1].status,'rejected');assert.equal(results[5].value,5);
+});
