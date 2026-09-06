@@ -86,7 +86,14 @@
       total + Math.min(score(normalize(user.name), term), score(normalize(user.handle), term.replace(/^@/, ''))), 0) }))
       .filter(item => Number.isFinite(item.score)).sort((a,b) => a.score-b.score || a.index-b.index).map(item => item.user);
   }
-  const api = { parsePage, countPages, findUsers };
+  function ratePlan(remaining, reset, now = Date.now()) {
+    if(remaining == null || reset == null || remaining === '' || reset === '')return {delayMs:1000,blockedUntil:0};
+    const left=Number(remaining),until=Number(reset)*1000;
+    if(!Number.isFinite(left)||!Number.isFinite(until)||until<=now)return {delayMs:1000,blockedUntil:0};
+    if(left<=5)return {delayMs:1000,blockedUntil:until+1000};
+    return {delayMs:Math.max(750,Math.ceil((until-now)/(left-5)*1.1)),blockedUntil:0};
+  }
+  const api = { parsePage, countPages, findUsers, ratePlan };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else Object.defineProperty(root, '__mutualsCore', { value: api, configurable: true });
 })(globalThis);

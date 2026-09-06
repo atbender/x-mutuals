@@ -63,3 +63,12 @@ test('user normalization excludes unsafe avatar and handle URLs', () => {
   const parsed=parsePage(data).users[0];
   assert.equal(parsed.handle,'');assert.equal(parsed.avatar,'');assert.equal(parsed.name,'<script>example</script>');
 });
+test('rate pacing reserves requests and stops before exhausting the window',()=>{
+ const {ratePlan}=require('../core.js'),now=100000;
+ assert.deepEqual(ratePlan(null,null,now),{delayMs:1000,blockedUntil:0});
+ assert.equal(ratePlan('5','200',now).blockedUntil,201000);
+ assert.equal(ratePlan('0','200',now).blockedUntil,201000);
+ assert.ok(ratePlan('15','200',now).delayMs>=10000);
+ assert.equal(ratePlan('1000','200',now).delayMs,750);
+ assert.equal(ratePlan('garbage','200',now).delayMs,1000);
+});

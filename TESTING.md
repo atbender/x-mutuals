@@ -47,3 +47,13 @@ Computer Use tested the opt-in ranking against synthetic accounts in the Chromiu
 - Light and dark layouts were visually inspected, including the screen-bounded list.
 
 Ranking-specific lookups have not yet been manually verified on live X. They use the same endpoint and authorization mechanism as the previously verified profile check. The implementation does not assume X provides a free embedded count. Batches use at most two pages per person, so `+` counts and partial rankings are expected for large lists.
+
+## Continuous ranking — 0.3.0
+
+- Selecting Most connected starts a sequential queue without batch buttons. Computer Use observed it continue past 30 people without another click.
+- Computer Use verified the active-row spinner, quiet queue dots, progress line, Pause, and Resume. Completed results remained cached across pause/resume.
+- A synthetic low-allowance response (five requests remaining) stopped further requests: two initial profile-list requests plus one ranking request, with a visible allowance-preservation message.
+- Rate-pacing unit tests cover missing/invalid headers, the five-request reserve, reset timing, and the minimum interval.
+- The same-origin Web Lock serializes ranking runs for the same account when supported. Other X traffic is outside this lock.
+
+Continuous ranking pacing remains to be verified against live X rate-limit headers. No guarantee is made that X will never rate-limit the extension.

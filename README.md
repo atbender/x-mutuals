@@ -6,7 +6,7 @@ Vanilla JavaScript. No dependencies, backend, API key, analytics, or sign-up.
 
 ![Mutuals walkthrough: open the minimized pill, view eight people, select Most connected, and calculate their counts](docs/walkthrough.gif)
 
-Minimized pill → mutual list → **Most connected** → **Check a batch**.
+Minimized pill → mutual list → **Most connected** → automatic calculation.
 
 *Recorded with the production extension UI over an anonymized screenshot of X. All displayed identities and ranking counts are fictional demo data. No developer tools or logs are shown.*
 
@@ -53,7 +53,11 @@ If X changes its endpoint or rejects authorization, select **Open X’s mutuals 
 
 ## Most connected
 
-Switch from **Default** to **Most connected** to see each person’s own count within your circle. Select **Check a batch** to enrich the list on demand: at most 10 requests per click, two pages per person, sequentially. The switch and local sorting send no requests. Cached counts are reused. Unchecked people show `—`; incomplete counts show `+`, and partial rankings are explicitly labeled. Order updates after each batch. See [the guide](INSTALL.md#use-the-sidebar) for details.
+Select **Most connected** once to calculate the list automatically. Counts arrive one person at a time: the active row has a spinner, queued rows show quiet dots, and a thin progress line tracks completion. Use **Pause / Resume** at any time. The list stays steady while calculating, then sorts by known counts when finished or paused.
+
+Requests are sequential. When X supplies rate-limit headers, pacing adapts to the remaining allowance and reset time, reserving five requests. Without headers, requests wait one second after each response. The calculation stops on rate limits or other errors; it never retries automatically. Completed counts are cached, so resuming skips them. Tabs use a same-origin Web Lock to prevent simultaneous ranking runs for the same signed-in account when supported.
+
+Each person is limited to two pages, and a continuous run has a 300-request safety ceiling. Lower bounds show `+`; partial results are explicitly indicated. These safeguards reduce traffic but cannot guarantee avoidance of X’s limits, which may also be consumed by X itself or other tabs/devices.
 
 ## Request budget
 
@@ -67,7 +71,7 @@ Switch from **Default** to **Most connected** to see each person’s own count w
 - No timed refresh, automatic retries, background worker, network polling, or full follower graph crawl.
 - Rate limits stop the check and enforce at least 60 seconds of cooldown, or X’s later reset time.
 
-Caches and request coordination are per tab. Multiple open X tabs are independent. Avatars use normal lazy image loading from X’s image host; request diagnostics count connection API requests, not image loads.
+Caches are per tab. Ranking runs coordinate through a same-origin Web Lock where supported; ordinary profile loading and X’s own requests are outside that lock. Avatars use normal lazy image loading from X’s image host; request diagnostics count connection API requests, not image loads.
 
 ## Privacy and implementation
 

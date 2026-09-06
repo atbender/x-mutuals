@@ -2,9 +2,10 @@
   'use strict';
   if (window.__mutualsLoaded) return;
   Object.defineProperty(window, '__mutualsLoaded', { value: true });
-  const { countPages, findUsers } = window.__mutualsCore;
+  const { countPages, findUsers, ratePlan } = window.__mutualsCore;
   const nativeFetch = window.fetch.bind(window);
   const records = new Map(), profiles = new Map(), ranks = new Map();
+  let rankNextAt = 0;
   let rankJob = null, sortMode = false, rankVersion = 0, rankMessage = "";
   const TTL = 5 * 60 * 1000;
   const endpointPattern = /^\/i\/api\/graphql\/[^/]+\/FollowersYouKnow$/;
@@ -140,19 +141,33 @@
     const x=ranking(a),y=ranking(b);return x && y ? y.count-x.count : x ? -1 : y ? 1 : 0;
   }
   async function rankBatch() {
+    if(navigator.locks){
+      return navigator.locks.request('mutuals-ranking-'+account(),{ifAvailable:true},lock=>{
+        if(lock)return rankAll();
+        rankMessage='Another tab is calculating. Pause it to continue here.';schedule();
+      });
+    }
+    return rankAll();
+  }
+  async function rankAll() {
     const p=page();
     if(!p || active || rankJob || !auth || auth.viewer!==account() || collapsed || document.hidden)return;
     if(Date.now()<blockedUntil){rankMessage='X is limiting requests. Try again later.';schedule();return;}
     const order=new Map([...(records.get(p.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
-    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order};
+    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order,currentId:null,delayMs:1000};
     const candidates=(records.get(p.handle)?.users ?? []).filter(user=>!ranking(user));
     if(!candidates.length)return;
-    rankJob=job;rankMessage='Checking a batch…';schedule();
+    rankJob=job;rankMessage='';schedule();
     const headers=new Headers(auth.headers), template=structuredClone(endpoint);
     const fetchRank=async(user,cursor)=>{
-      if(job.requests)await new Promise(resolve=>setTimeout(resolve,750));
-      if(job.controller.signal.aborted)throw new Error('Batch paused.');
-      if(job.requests>=10)throw new Error('Batch limit reached.');
+      if(Date.now()<rankNextAt)await new Promise(resolve=>{
+        const timer=setTimeout(done,rankNextAt-Date.now());
+        function done(){clearTimeout(timer);job.controller.signal.removeEventListener('abort',done);resolve();}
+        job.controller.signal.addEventListener('abort',done,{once:true});
+      });
+      if(job.controller.signal.aborted)throw new Error('Calculation paused.');
+      if(job.requests>=300)throw new Error('Safety limit reached. Resume when ready.');
+      if(Date.now()<blockedUntil)throw new Error('Paused to preserve X’s request allowance. Try again after the cooldown.');
       const url=new URL(template.path,location.origin);
       if(!endpointPattern.test(url.pathname)||url.origin!==location.origin)throw new Error('Reconnect through X’s mutuals list.');
       url.searchParams.set('variables',JSON.stringify({userId:user.id,count:100,includePromotedContent:false,...(cursor?{cursor}:{})}));
@@ -160,23 +175,26 @@
       if(template.fieldToggles)url.searchParams.set('fieldToggles',JSON.stringify(template.fieldToggles));
       job.requests++;
       const response=await nativeFetch(url.href,{credentials:'same-origin',headers,signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(15000)])});
+      const pace=ratePlan(response.headers.get('x-rate-limit-remaining'),response.headers.get('x-rate-limit-reset'));
+      job.delayMs=pace.delayMs;rankNextAt=Date.now()+pace.delayMs;blockedUntil=Math.max(blockedUntil,pace.blockedUntil);
       if(response.status===429)blockedUntil=Math.max(Date.now()+60000,Number(response.headers.get('x-rate-limit-reset'))*1000||0);
       if(!response.ok)throw new Error(statusMessage(response.status));
       return response.json();
     };
     try {
       for(const user of candidates){
-        if(job.controller.signal.aborted || job.requests>=10)break;
-        const maxPages=Math.min(2,10-job.requests);
+        if(job.controller.signal.aborted || job.requests>=300){if(job.requests>=300)rankMessage='Safety limit reached. Resume when ready.';break;}
+        job.currentId=user.id;rankVersion++;schedule();
+        const maxPages=Math.min(2,300-job.requests);
         const result=await countPages({first:await fetchRank(user),maxPages,signal:job.controller.signal,fetchPage:cursor=>fetchRank(user,cursor)});
-        if(job.viewer!==account())break;
+        if(job.viewer!==account() || job.controller.signal.aborted)break;
         ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
         while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
-        rankVersion++;rankMessage=`${job.requests} of 10 requests used`;schedule();
+        rankVersion++;schedule();
         if(!result.complete && !/page limit/.test(result.reason)){rankMessage=result.reason;break;}
       }
-    }catch(error){rankMessage=job.controller.signal.aborted?'Batch paused.':error.message;}
-    finally{if(rankJob===job)rankJob=null;rankVersion++;schedule();}
+    }catch(error){rankMessage=job.controller.signal.aborted?'Calculation paused.':error.message;}
+    finally{if(job.controller.signal.aborted)rankMessage='Calculation paused.';if(rankJob===job)rankJob=null;rankVersion++;schedule();}
   }
 
   const css = `
@@ -196,6 +214,7 @@
     button:focus-visible,a:focus-visible{outline:2px solid #1d9bf0;outline-offset:-3px}.skeleton{height:62px;padding:13px 16px;display:flex;gap:10px}.skeleton .avatar{opacity:.65}.bones{flex:1;padding-top:5px}.bone{height:7px;background:var(--line);border-radius:5px;width:74%;margin-bottom:9px}.bone+.bone{width:48%;opacity:.6}
     .search-button{display:grid;place-items:center;margin-left:auto}.search-button+.icon{margin-left:0}.search-box{margin-top:13px}.search-input{display:block;width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);color:var(--text);font:12px/1.4 inherit;font-family:inherit;font-size:12px;outline:none}.search-input:focus{border-color:#1d9bf0}.search-input::placeholder{color:var(--muted)}.search-summary{padding:3px 16px 8px;color:var(--muted);font-size:11px}.people{scrollbar-gutter:stable;max-height:min(560px,calc(100dvh - 285px))}
     .ranking-controls{margin-top:13px}.sort-tabs{display:flex;gap:3px;background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:3px}.sort-option{flex:1;border:0;border-radius:5px;padding:5px 3px;background:none;color:var(--muted);font-size:11px}.sort-option[aria-pressed=true]{background:var(--line);color:var(--text)}.rank-info{font-size:11px;color:var(--text);margin-top:12px}.rank-detail{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px}.rank-action{font-size:11px;border:1px solid var(--line);background:none;color:var(--text);border-radius:99px;padding:6px 11px;margin-top:9px}.rank-action:disabled{opacity:.5;cursor:default}.budget{display:block;color:var(--muted);font-size:10px;margin-top:6px}.connection-score{margin-left:auto;flex:none;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.identity{flex:1}.panel{display:flex;flex-direction:column;max-height:calc(100dvh - 100px)}.heading,.footer{flex-shrink:0}.people{min-height:0;flex:0 1 auto}
+    .rank-progress{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:8px}.rank-info{margin:0;font-variant-numeric:tabular-nums}.rank-action{margin:0;padding:3px 0;border:0;color:var(--muted);font-size:11px}.rank-action:hover{color:var(--text)}.rank-track{height:2px;background:var(--line);margin:10px 0 8px;border-radius:2px;overflow:hidden}.rank-fill{height:100%;background:#1d9bf0;transition:width .3s ease}.row-spinner{width:13px;height:13px;border:1.5px solid var(--line);border-top-color:#1d9bf0;border-radius:50%;animation:spin .8s linear infinite}.row-queued{width:4px;height:4px;border-radius:50%;background:var(--muted);opacity:.4;margin-right:4px}@keyframes spin{to{transform:rotate(360deg)}}
     @media(max-width:1100px){:host{right:12px;width:270px;top:66px}.panel{box-shadow:0 8px 36px #0003}}@media(max-width:600px){:host{top:auto;bottom:18px;right:12px;width:min(292px,calc(100vw - 24px))}.people{max-height:45dvh}}
     @media(prefers-reduced-motion:reduce){*{animation:none!important}}
   `;
@@ -217,7 +236,7 @@
     syncAccount();
     const next = p ? `${p.handle}:${p.list}` : '';
     const routeChanged = route !== next;
-    if (routeChanged) { active?.controller.abort();rankJob?.controller.abort(); clearTimeout(timer); timer = null; route = next; signature = ''; visibleRows = 100; query = ''; rankMessage=''; }
+    if (routeChanged) { active?.controller.abort();rankJob?.controller.abort(); clearTimeout(timer); timer = null; route = next; signature = ''; visibleRows = 100; query = ''; rankMessage='';sortMode=false; }
     if (!p || !who || p.handle === who || !document.querySelector('[data-testid="primaryColumn"]')) { host?.remove(); host = root = null; signature = ''; return; }
     let record = records.get(p.handle);
     if (routeChanged && record && Date.now() - record.time > TTL && active?.handle !== p.handle) { records.delete(p.handle); record = null; }
@@ -261,18 +280,21 @@
     if(record?.users?.length){
       const controls=el('div','ranking-controls'), tabs=el('div','sort-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Order mutuals');
       for(const [label,value] of [['Default',false],['Most connected',true]]){
-        const button=el('button','sort-option',label);button.type='button';button.setAttribute('aria-pressed',String(sortMode===value));
-        button.onclick=()=>{sortMode=value;visibleRows=100;if(!value)rankJob?.controller.abort();signature='';schedule();};tabs.append(button);
+        const button=el('button','sort-option',label);button.type='button';button.setAttribute('aria-pressed',String(sortMode===value));button.disabled=Boolean(active);
+        button.onclick=()=>{sortMode=value;visibleRows=100;if(!value)rankJob?.controller.abort();signature='';schedule();if(value)rankBatch();};tabs.append(button);
       }
       controls.append(tabs);
       if(sortMode){
         const checked=record.users.filter(user=>ranking(user)).length;
-        const info=el('div','rank-info',`${checked} of ${record.users.length} checked${checked<record.users.length || record.users.some(user=>!ranking(user)?.complete)?' · partial ranking':''}`);info.setAttribute('role','status');
-        const detail=el('div','rank-detail',rankJob?'Order updates when the batch ends.':rankMessage || 'People in your circle who follow each person.');
-        const button=el('button','rank-action',rankJob?'Stop':checked<record.users.length?'Check a batch':'Checked available mutuals');button.type='button';button.disabled=!rankJob&&(Boolean(active)||checked===record.users.length);
-        button.onclick=()=>{if(rankJob)rankJob.controller.abort();else rankBatch();};
-        controls.append(info,detail,button);
-        if(checked<record.users.length)controls.append(el('span','budget','Up to 10 requests · only when you click'));
+        const progress=el('div','rank-progress');
+        const info=el('div','rank-info',rankJob?`Calculating · ${checked} / ${record.users.length}`:checked===record.users.length?'Ranking ready':`${checked} of ${record.users.length} calculated`);info.setAttribute('role','status');
+        const button=el('button','rank-action',rankJob?'Pause':checked<record.users.length?'Resume':'↻');button.type='button';button.setAttribute('aria-label',rankJob?'Pause ranking':checked<record.users.length?'Resume ranking':'Recalculate ranking');button.disabled=Boolean(active);
+        button.onclick=()=>{if(rankJob)rankJob.controller.abort();else {if(checked===record.users.length){for(const user of record.users)ranks.delete(user.id);}rankBatch();}};
+        progress.append(info,button);controls.append(progress);
+        const track=el('div','rank-track'),fill=el('div','rank-fill');fill.style.width=`${checked/record.users.length*100}%`;track.append(fill);controls.append(track);
+        const partial=record.users.some(user=>ranking(user)&&!ranking(user).complete);
+        controls.append(el('div','rank-detail',rankMessage || (rankJob?'One at a time. Sorted when ready.':partial?'Sorted by known counts · + means at least':'People in your circle who follow each person.')));
+
       }
       heading.append(controls);
     }
@@ -287,7 +309,7 @@
       const identity = el('div','identity'), name = el('div','name',user.name);
       if(user.verified){ const badge=el('span','tick','✓');badge.setAttribute('aria-label','Verified');name.append(badge); }
       identity.append(name,el('div','handle',user.handle?`@${user.handle}`:'Unavailable account')); row.append(avatar,identity);
-      if(sortMode){const result=ranking(user),score=el('span','connection-score',result?`${result.count.toLocaleString()}${result.complete?'':'+'}`:'—');score.title=result?`${result.count}${result.complete?'':' or more'} people you follow also follow this person${result.reason?'. '+result.reason:''}`:'Not checked';score.setAttribute('aria-label',result?`${result.count}${result.complete?'':' or more'} mutual connections`:'Not checked');row.append(score);}
+      if(sortMode){const result=ranking(user),score=el('span','connection-score',result?`${result.count.toLocaleString()}${result.complete?'':'+'}`:'—');score.title=result?`${result.count}${result.complete?'':' or more'} people you follow also follow this person${result.reason?'. '+result.reason:''}`:'Not checked';score.setAttribute('aria-label',result?`${result.count}${result.complete?'':' or more'} mutual connections`:'Not checked');if(!result){score.textContent='';score.classList.add(rankJob?.currentId===user.id?'row-spinner':'row-queued');score.setAttribute('aria-label',rankJob?.currentId===user.id?'Calculating mutual connections':'Waiting to calculate');}row.append(score);}
       people.append(row);
     }
     if (users.length > visibleRows) { const more=el('button','more','Show more');more.type='button';more.onclick=()=>{visibleRows+=100;signature='';schedule();};people.append(more); }

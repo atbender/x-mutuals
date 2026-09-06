@@ -14,6 +14,7 @@ http.createServer((req,res) => {
     requests++;
     const vars = JSON.parse(url.searchParams.get('variables'));
     res.setHeader('Content-Type','application/json');
+    if(scenario==='budget' && vars.userId!=='123'){res.setHeader('x-rate-limit-remaining','5');res.setHeader('x-rate-limit-reset',String(Math.ceil(Date.now()/1000)+60));}
     if (vars.cursor && scenario === 'rate') { res.statusCode=429; res.end(JSON.stringify({errors:[{message:'Rate limited'}]})); return; }
     const data = scenario === 'demo' ? vars.userId==='123' ? page([1,2,3,4,5,6,7,8]) : page(Array.from({length:(Number(vars.userId)*7)%37+1},(_,i)=>1000+i)) : vars.userId !== '123' && scenario === 'long' ? page(Array.from({length:(Number(vars.userId)*7)%37+1},(_,i)=>1000+i)) : scenario === 'long' ? page(Array.from({length:120},(_,i)=>i+1)) : scenario === 'zero' ? page([]) : vars.cursor ? scenario === 'repeat' ? page([1,2], 'next') : page([2,3,4]) : page([1,2], 'next');
     setTimeout(() => res.end(JSON.stringify(data)), scenario === 'slow' && vars.cursor ? 6000 : 80); return;
