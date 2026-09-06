@@ -4,7 +4,8 @@
   Object.defineProperty(window, '__mutualsLoaded', { value: true });
   const { countPages, findUsers } = window.__mutualsCore;
   const nativeFetch = window.fetch.bind(window);
-  const records = new Map(), profiles = new Map();
+  const records = new Map(), profiles = new Map(), ranks = new Map();
+  let rankJob = null, sortMode = false, rankVersion = 0, rankMessage = "";
   const TTL = 5 * 60 * 1000;
   const endpointPattern = /^\/i\/api\/graphql\/[^/]+\/FollowersYouKnow$/;
   const operations = /^\/i\/api\/graphql\/[^/]+\/(FollowersYouKnow|UserByScreenName|UserByRestId)$/;
@@ -97,7 +98,7 @@
   };
 
   async function run(handle, first) {
-    if (active || !auth || auth.viewer !== account() || !profiles.has(handle) || page()?.handle !== handle || document.hidden) return;
+    if (active || rankJob || !auth || auth.viewer !== account() || !profiles.has(handle) || page()?.handle !== handle || document.hidden) return;
     if (Date.now() < blockedUntil) {
       save(handle, { ...records.get(handle), count: records.get(handle)?.count ?? 0, complete: false, reason: 'X is limiting requests. Wait before checking again.' }); return;
     }
@@ -130,6 +131,54 @@
     finally { if (active === job) active = null; schedule(); }
   }
 
+  function ranking(user) {
+    const cached = records.get(user.handle?.toLowerCase());
+    const result = cached?.complete ? cached : ranks.get(user.id);
+    return result && Date.now()-result.time < TTL ? result : null;
+  }
+  function compareRanks(a,b) {
+    const x=ranking(a),y=ranking(b);return x && y ? y.count-x.count : x ? -1 : y ? 1 : 0;
+  }
+  async function rankBatch() {
+    const p=page();
+    if(!p || active || rankJob || !auth || auth.viewer!==account() || collapsed || document.hidden)return;
+    if(Date.now()<blockedUntil){rankMessage='X is limiting requests. Try again later.';schedule();return;}
+    const order=new Map([...(records.get(p.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
+    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order};
+    const candidates=(records.get(p.handle)?.users ?? []).filter(user=>!ranking(user));
+    if(!candidates.length)return;
+    rankJob=job;rankMessage='Checking a batch…';schedule();
+    const headers=new Headers(auth.headers), template=structuredClone(endpoint);
+    const fetchRank=async(user,cursor)=>{
+      if(job.requests)await new Promise(resolve=>setTimeout(resolve,750));
+      if(job.controller.signal.aborted)throw new Error('Batch paused.');
+      if(job.requests>=10)throw new Error('Batch limit reached.');
+      const url=new URL(template.path,location.origin);
+      if(!endpointPattern.test(url.pathname)||url.origin!==location.origin)throw new Error('Reconnect through X’s mutuals list.');
+      url.searchParams.set('variables',JSON.stringify({userId:user.id,count:100,includePromotedContent:false,...(cursor?{cursor}:{})}));
+      url.searchParams.set('features',JSON.stringify(template.features));
+      if(template.fieldToggles)url.searchParams.set('fieldToggles',JSON.stringify(template.fieldToggles));
+      job.requests++;
+      const response=await nativeFetch(url.href,{credentials:'same-origin',headers,signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(15000)])});
+      if(response.status===429)blockedUntil=Math.max(Date.now()+60000,Number(response.headers.get('x-rate-limit-reset'))*1000||0);
+      if(!response.ok)throw new Error(statusMessage(response.status));
+      return response.json();
+    };
+    try {
+      for(const user of candidates){
+        if(job.controller.signal.aborted || job.requests>=10)break;
+        const maxPages=Math.min(2,10-job.requests);
+        const result=await countPages({first:await fetchRank(user),maxPages,signal:job.controller.signal,fetchPage:cursor=>fetchRank(user,cursor)});
+        if(job.viewer!==account())break;
+        ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
+        while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
+        rankVersion++;rankMessage=`${job.requests} of 10 requests used`;schedule();
+        if(!result.complete && !/page limit/.test(result.reason)){rankMessage=result.reason;break;}
+      }
+    }catch(error){rankMessage=job.controller.signal.aborted?'Batch paused.':error.message;}
+    finally{if(rankJob===job)rankJob=null;rankVersion++;schedule();}
+  }
+
   const css = `
     :host{position:fixed;right:16px;top:76px;width:292px;z-index:1000;font:14px/1.4 TwitterChirp,"Avenir Next","Segoe UI",sans-serif;color:var(--text);color-scheme:light dark}
     *{box-sizing:border-box}button,a{font:inherit;color:inherit}button{cursor:pointer}a{text-decoration:none}
@@ -146,6 +195,7 @@
     .collapsed{float:right;display:flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid var(--line);border-radius:99px;background:var(--paper);font-size:12px}.rings{display:flex;width:22px}.rings i{width:13px;height:13px;border:1.4px solid currentColor;border-radius:50%}.rings i+i{margin-left:-5px}
     button:focus-visible,a:focus-visible{outline:2px solid #1d9bf0;outline-offset:-3px}.skeleton{height:62px;padding:13px 16px;display:flex;gap:10px}.skeleton .avatar{opacity:.65}.bones{flex:1;padding-top:5px}.bone{height:7px;background:var(--line);border-radius:5px;width:74%;margin-bottom:9px}.bone+.bone{width:48%;opacity:.6}
     .search-button{display:grid;place-items:center;margin-left:auto}.search-button+.icon{margin-left:0}.search-box{margin-top:13px}.search-input{display:block;width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);color:var(--text);font:12px/1.4 inherit;font-family:inherit;font-size:12px;outline:none}.search-input:focus{border-color:#1d9bf0}.search-input::placeholder{color:var(--muted)}.search-summary{padding:3px 16px 8px;color:var(--muted);font-size:11px}.people{scrollbar-gutter:stable;max-height:min(560px,calc(100dvh - 285px))}
+    .ranking-controls{margin-top:13px}.sort-tabs{display:flex;gap:3px;background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:3px}.sort-option{flex:1;border:0;border-radius:5px;padding:5px 3px;background:none;color:var(--muted);font-size:11px}.sort-option[aria-pressed=true]{background:var(--line);color:var(--text)}.rank-info{font-size:11px;color:var(--text);margin-top:12px}.rank-detail{font-size:11px;line-height:1.5;color:var(--muted);margin-top:4px}.rank-action{font-size:11px;border:1px solid var(--line);background:none;color:var(--text);border-radius:99px;padding:6px 11px;margin-top:9px}.rank-action:disabled{opacity:.5;cursor:default}.budget{display:block;color:var(--muted);font-size:10px;margin-top:6px}.connection-score{margin-left:auto;flex:none;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.identity{flex:1}.panel{display:flex;flex-direction:column;max-height:calc(100dvh - 100px)}.heading,.footer{flex-shrink:0}.people{min-height:0;flex:0 1 auto}
     @media(max-width:1100px){:host{right:12px;width:270px;top:66px}.panel{box-shadow:0 8px 36px #0003}}@media(max-width:600px){:host{top:auto;bottom:18px;right:12px;width:min(292px,calc(100vw - 24px))}.people{max-height:45dvh}}
     @media(prefers-reduced-motion:reduce){*{animation:none!important}}
   `;
@@ -159,7 +209,7 @@
   }
   function syncAccount() {
     const who = account();
-    if (who !== viewer) { active?.controller.abort(); records.clear(); profiles.clear(); auth = null; viewer = who; }
+    if (who !== viewer) { active?.controller.abort();rankJob?.controller.abort(); records.clear(); profiles.clear(); ranks.clear();rankVersion++; auth = null; viewer = who; }
   }
   function render() {
     queued = false;
@@ -167,7 +217,7 @@
     syncAccount();
     const next = p ? `${p.handle}:${p.list}` : '';
     const routeChanged = route !== next;
-    if (routeChanged) { active?.controller.abort(); clearTimeout(timer); timer = null; route = next; signature = ''; visibleRows = 100; query = ''; }
+    if (routeChanged) { active?.controller.abort();rankJob?.controller.abort(); clearTimeout(timer); timer = null; route = next; signature = ''; visibleRows = 100; query = ''; rankMessage=''; }
     if (!p || !who || p.handle === who || !document.querySelector('[data-testid="primaryColumn"]')) { host?.remove(); host = root = null; signature = ''; return; }
     let record = records.get(p.handle);
     if (routeChanged && record && Date.now() - record.time > TTL && active?.handle !== p.handle) { records.delete(p.handle); record = null; }
@@ -179,7 +229,7 @@
     const rgb = background.match(/[\d.]+/g)?.map(Number) ?? [0,0,0];
     const dark = rgb[0]+rgb[1]+rgb[2] < 380;
     const running = active?.handle === p.handle;
-    const nextSignature = JSON.stringify([route, record?.time, record?.count, record?.reason, running, collapsed, visibleRows, background, searchOpen, query]);
+    const nextSignature = JSON.stringify([route, record?.time, record?.count, record?.reason, running, sortMode, rankVersion, Boolean(rankJob), rankMessage, collapsed, visibleRows, background, searchOpen, query]);
     if (signature === nextSignature) return;
     signature = nextSignature;
     host.style.cssText = dark ? `--paper:${background};--text:#e7e9ea;--muted:#71767b;--line:${rgb[0]>8?'#38444d':'#2f3336'};--hover:rgba(255,255,255,.03)` : '--paper:#fff;--text:#0f1419;--muted:#536471;--line:#eff3f4;--hover:rgba(0,0,0,.025)';
@@ -192,7 +242,7 @@
     if (collapsed) { const button = el('button','collapsed'); button.type='button'; button.append(rings(),el('span','',record ? `${count} mutuals` : 'Mutuals')); button.setAttribute('aria-label','Open mutuals sidebar'); button.onclick=()=>{collapsed=false;signature='';schedule();}; root.append(button); return; }
     const panel = el('section','panel'), heading = el('div','heading'), top = el('div','top');
     const title = el('h2','title','Mutuals'), countLabel = el('span','count',count); countLabel.setAttribute('role','status'); countLabel.setAttribute('aria-live','polite');
-    const close = el('button','icon','−'); close.type='button'; close.setAttribute('aria-label','Collapse mutuals sidebar'); close.onclick=()=>{collapsed=true;active?.controller.abort();clearTimeout(timer);timer=null;signature='';schedule();};
+    const close = el('button','icon','−'); close.type='button'; close.setAttribute('aria-label','Collapse mutuals sidebar'); close.onclick=()=>{collapsed=true;active?.controller.abort();rankJob?.controller.abort();clearTimeout(timer);timer=null;signature='';schedule();};
     const searchButton = el('button','icon search-button'); searchButton.type='button';
     searchButton.setAttribute('aria-label','Find mutuals'); searchButton.setAttribute('aria-keyshortcuts','Meta+f Control+f');
     searchButton.title='Find mutuals (⌘F / Ctrl+F)';
@@ -206,7 +256,26 @@
       input.oninput=()=>{query=input.value;visibleRows=100;schedule();};
       searchBox.append(input);heading.append(searchBox);
     }
-    const users = findUsers(record?.users ?? [], query);
+    let users = findUsers(record?.users ?? [], query);
+    if(sortMode)users=[...users].sort(rankJob ? (a,b)=>(rankJob.order.get(a.id)??Infinity)-(rankJob.order.get(b.id)??Infinity) : compareRanks);
+    if(record?.users?.length){
+      const controls=el('div','ranking-controls'), tabs=el('div','sort-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','Order mutuals');
+      for(const [label,value] of [['Default',false],['Most connected',true]]){
+        const button=el('button','sort-option',label);button.type='button';button.setAttribute('aria-pressed',String(sortMode===value));
+        button.onclick=()=>{sortMode=value;visibleRows=100;if(!value)rankJob?.controller.abort();signature='';schedule();};tabs.append(button);
+      }
+      controls.append(tabs);
+      if(sortMode){
+        const checked=record.users.filter(user=>ranking(user)).length;
+        const info=el('div','rank-info',`${checked} of ${record.users.length} checked${checked<record.users.length || record.users.some(user=>!ranking(user)?.complete)?' · partial ranking':''}`);info.setAttribute('role','status');
+        const detail=el('div','rank-detail',rankJob?'Order updates when the batch ends.':rankMessage || 'People in your circle who follow each person.');
+        const button=el('button','rank-action',rankJob?'Stop':checked<record.users.length?'Check a batch':'Checked available mutuals');button.type='button';button.disabled=!rankJob&&(Boolean(active)||checked===record.users.length);
+        button.onclick=()=>{if(rankJob)rankJob.controller.abort();else rankBatch();};
+        controls.append(info,detail,button);
+        if(checked<record.users.length)controls.append(el('span','budget','Up to 10 requests · only when you click'));
+      }
+      heading.append(controls);
+    }
     if(query.trim()) {
       const summary=el('div','search-summary',`${users.length} matching ${users.length===1?'person':'people'}${record?.complete?'':' so far'}`);summary.setAttribute('role','status');people.append(summary);
       if(!users.length)people.append(el('div','empty','No matching mutuals. Try a shorter name or handle.'));
@@ -217,7 +286,9 @@
       if(user.avatar){avatar.src=user.avatar;avatar.alt='';avatar.loading='lazy';avatar.referrerPolicy='no-referrer';}
       const identity = el('div','identity'), name = el('div','name',user.name);
       if(user.verified){ const badge=el('span','tick','✓');badge.setAttribute('aria-label','Verified');name.append(badge); }
-      identity.append(name,el('div','handle',user.handle?`@${user.handle}`:'Unavailable account')); row.append(avatar,identity); people.append(row);
+      identity.append(name,el('div','handle',user.handle?`@${user.handle}`:'Unavailable account')); row.append(avatar,identity);
+      if(sortMode){const result=ranking(user),score=el('span','connection-score',result?`${result.count.toLocaleString()}${result.complete?'':'+'}`:'—');score.title=result?`${result.count}${result.complete?'':' or more'} people you follow also follow this person${result.reason?'. '+result.reason:''}`:'Not checked';score.setAttribute('aria-label',result?`${result.count}${result.complete?'':' or more'} mutual connections`:'Not checked');row.append(score);}
+      people.append(row);
     }
     if (users.length > visibleRows) { const more=el('button','more','Show more');more.type='button';more.onclick=()=>{visibleRows+=100;signature='';schedule();};people.append(more); }
     if (!users.length && !record?.reason && !record?.complete) {
@@ -232,11 +303,11 @@
     const footer=el('div','footer'); const state=el('span',`status ${running?'working':''}`);state.append(el('span','dot'),el('span','',running?'Checking…':record?.complete?'Up to date':record?'Partial count':'Connecting…'));
     if(record?.elapsedMs!==undefined) state.title=`${record.extraRequests} extra requests · ${(record.elapsedMs/1000).toFixed(1)}s · checked ${new Date(record.time).toLocaleTimeString()}`;
     const action=el('button','text-button',running?'Stop':'Refresh');action.type='button';
-    action.disabled=!running && (Date.now()<blockedUntil || Boolean(record && Date.now()-record.time<10000));
+    action.disabled=!running && (Boolean(rankJob) || Date.now()<blockedUntil || Boolean(record && Date.now()-record.time<10000));
     action.onclick=()=>{if(running)active.controller.abort();else if(auth&&profiles.has(p.handle))run(p.handle);else location.reload();};
     footer.append(state,action);panel.append(heading,people,footer);root.append(panel);people.scrollTop=previousScroll;
     if(searchOpen && (focusSearch || restoreFocus)){const input=root.querySelector('.search-input');input.focus({preventScroll:true});if(restoreFocus && selection?.[0]!=null)input.setSelectionRange(...selection);focusSearch=false;}
-    if(action.disabled) setTimeout(()=>{if(action.isConnected)action.disabled=Date.now()<blockedUntil;},Math.max(10000,blockedUntil-Date.now()));
+    if(action.disabled) setTimeout(()=>{if(action.isConnected)action.disabled=Boolean(rankJob)||Date.now()<blockedUntil;},Math.max(10000,blockedUntil-Date.now()));
   }
   function schedule(){if(!queued){queued=true;requestAnimationFrame(render);}}
   new MutationObserver(schedule).observe(document,{subtree:true,childList:true});
@@ -250,7 +321,7 @@
       event.preventDefault();searchOpen=false;query='';signature='';schedule();requestAnimationFrame(()=>root.querySelector('.search-button')?.focus());
     }
   });
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)active?.controller.abort();else schedule();});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){active?.controller.abort();rankJob?.controller.abort();}else schedule();});
   document.addEventListener('DOMContentLoaded',()=>{new MutationObserver(schedule).observe(document.body,{attributes:true,attributeFilter:['style','class']});},{once:true});
   schedule();
 })();

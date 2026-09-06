@@ -35,3 +35,15 @@ This checks browser UI and script integration, not installed Chrome-extension be
 ## Limits
 
 Chrome and standalone Firefox native windows were unavailable to Computer Use. The installed live test used Zen’s Firefox engine. Chrome/Edge/Brave manifests are built, but installation in those browsers is not yet verified. Safari and Android were not tested.
+
+## Ranking UI — 0.2.0
+
+Computer Use tested the opt-in ranking against synthetic accounts in the Chromium fixture:
+
+- Selecting Most connected sent no extra requests.
+- A batch stopped at 10 requests: 11 total including the original profile list.
+- Ten distinct fixture counts sorted descending, with unchecked people below them.
+- Stopping the next batch prevented further requests after its first request.
+- Light and dark layouts were visually inspected, including the screen-bounded list.
+
+Ranking-specific lookups have not yet been manually verified on live X. They use the same endpoint and authorization mechanism as the previously verified profile check. The implementation does not assume X provides a free embedded count. Batches use at most two pages per person, so `+` counts and partial rankings are expected for large lists.

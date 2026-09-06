@@ -6,6 +6,8 @@ Vanilla JavaScript. No dependencies, backend, API key, analytics, or sign-up.
 
 ## Install
 
+**[Step-by-step installation and usage guide](INSTALL.md)** · **[Download browser ZIPs](https://github.com/atbender/x-mutuals/releases/latest)**
+
 Run `npm run build`. Ready-to-load builds appear in `dist/`.
 
 **Chrome / Edge / Brave (Chromium 120+)**
@@ -33,6 +35,10 @@ Click the search icon or press **⌘F / Ctrl+F** on a profile to fuzzy-search lo
 
 If X changes its endpoint or rejects authorization, select **Open X’s mutuals list**. The extension can learn current query metadata from that native request and reuse the first page.
 
+## Most connected
+
+Switch from **Default** to **Most connected** to see each person’s own count within your circle. Select **Check a batch** to enrich the list on demand: at most 10 requests per click, two pages per person, sequentially. The switch and local sorting send no requests. Cached counts are reused. Unchecked people show `—`; incomplete counts show `+`, and partial rankings are explicitly labeled. Order updates after each batch. See [the guide](INSTALL.md#use-the-sidebar) for details.
+
 ## Request budget
 
 - Reuses X’s profile response for the target ID and current authorization; no extra profile lookup.
@@ -51,7 +57,7 @@ Caches and request coordination are per tab. Multiple open X tabs are independen
 
 The scripts run in X’s MAIN world and observe only same-origin GET requests for `UserByScreenName`, `UserByRestId`, and `FollowersYouKnow`. Session headers remain in page memory and are sent only to the same X origin. Cookies are attached by the browser; the extension does not extract them. There is no external service or telemetry.
 
-Only public query metadata (endpoint path and feature flags) is persisted in X’s localStorage. Profile results remain in tab memory. X’s page can inspect or interfere with MAIN-world code; this is not an isolated security boundary.
+Only public query metadata (endpoint path and feature flags) is persisted in X’s localStorage. Profile results and up to 1,000 ranking counts remain in tab memory. X’s page can inspect or interfere with MAIN-world code; this is not an isolated security boundary.
 
 `endpoint.js` provides initial query metadata. `content.js` observes responses, manages the cache and displays the Shadow DOM sidebar. `core.js` parses responses and deduplicates numeric IDs. `tools/build.cjs` produces the browser manifests. The extension injects only on `https://x.com/*` and `https://twitter.com/*`, without cookies, tabs, storage, or broad host permissions.
 
