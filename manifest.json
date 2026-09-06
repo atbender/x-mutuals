@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mutuals — a little more context",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A quiet mutual-connections counter for X. Uses your current session. No account, API key, or tracking.",
   "minimum_chrome_version": "120",
   "action": { "default_title": "Mutuals", "default_popup": "popup.html" },

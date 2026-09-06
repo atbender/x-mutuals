@@ -53,9 +53,9 @@ If X changes its endpoint or rejects authorization, select **Open X’s mutuals 
 
 ## Most connected
 
-Select **Most connected** once to calculate the list automatically. Counts arrive one person at a time: the active row has a spinner, queued rows show quiet dots, and a thin progress line tracks completion. Use **Pause / Resume** at any time. The list stays steady while calculating, then sorts by known counts when finished or paused.
+Select **Most connected** once to calculate the list automatically. Counts arrive one person at a time: the active row has a spinner, queued rows show quiet dots, and a thin progress line tracks completion. Use **Pause / Resume** at any time. The list gently reorders after four completed people or four seconds of progress. Reordering waits while you hover over the list or focus a person, so links do not move out from under you.
 
-Requests are sequential. When X supplies rate-limit headers, pacing adapts to the remaining allowance and reset time, reserving five requests. Without headers, requests wait one second after each response. The calculation stops on rate limits or other errors; it never retries automatically. Completed counts are cached, so resuming skips them. Tabs use a same-origin Web Lock to prevent simultaneous ranking runs for the same signed-in account when supported.
+Requests are sequential. When X supplies rate-limit headers, pacing adapts to the remaining allowance and reset time, reserving five requests. Without headers, requests wait one second after each response. When the reported allowance reaches the reserve, calculation waits for the reset and continues automatically. Actual rate-limit errors and other failures stop the run; failed requests are not retried automatically. Completed counts are cached, so resuming skips them. Tabs use a same-origin Web Lock to prevent simultaneous ranking runs for the same signed-in account when supported.
 
 Each person is limited to two pages, and a continuous run has a 300-request safety ceiling. Lower bounds show `+`; partial results are explicitly indicated. These safeguards reduce traffic but cannot guarantee avoidance of X’s limits, which may also be consumed by X itself or other tabs/devices.
 

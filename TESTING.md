@@ -57,3 +57,9 @@ Ranking-specific lookups have not yet been manually verified on live X. They use
 - The same-origin Web Lock serializes ranking runs for the same account when supported. Other X traffic is outside this lock.
 
 Continuous ranking pacing remains to be verified against live X rate-limit headers. No guarantee is made that X will never rate-limit the extension.
+
+## Automatic cooldowns and periodic ordering — 0.3.1
+
+Computer Use verified a short synthetic allowance reset: the queue displayed its waiting state, resumed without a click, and completed all four people (10 total fixture requests including profile pagination). A longer run showed reordered results while still calculating at 63 of 120 people. Hover and focused-row guards defer periodic reordering; completed counts and request pacing are retained. All 12 unit tests pass.
+
+Ancillary metadata was removed from the X backdrop JPEG without changing decoded pixels. Earlier history still contains the prior harmless display profile; no GPS, names, or account identifiers were present in that metadata.

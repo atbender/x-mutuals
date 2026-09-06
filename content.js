@@ -140,6 +140,13 @@
   function compareRanks(a,b) {
     const x=ranking(a),y=ranking(b);return x && y ? y.count-x.count : x ? -1 : y ? 1 : 0;
   }
+  function updateRankOrder() {
+    if(!rankJob)return;
+    const list=root?.querySelector('.people');
+    if(list?.matches(':hover') || root?.activeElement?.closest('.person'))return;
+    rankJob.order=new Map([...(records.get(rankJob.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
+    rankJob.sinceSort=0;rankJob.lastSort=performance.now();rankVersion++;schedule();
+  }
   async function rankBatch() {
     if(navigator.locks){
       return navigator.locks.request('mutuals-ranking-'+account(),{ifAvailable:true},lock=>{
@@ -152,22 +159,26 @@
   async function rankAll() {
     const p=page();
     if(!p || active || rankJob || !auth || auth.viewer!==account() || collapsed || document.hidden)return;
-    if(Date.now()<blockedUntil){rankMessage='X is limiting requests. Try again later.';schedule();return;}
     const order=new Map([...(records.get(p.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
-    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order,currentId:null,delayMs:1000};
+    const job={controller:new AbortController(),viewer:account(),handle:p.handle,requests:0,order,currentId:null,delayMs:1000,lastSort:performance.now(),sinceSort:0};
     const candidates=(records.get(p.handle)?.users ?? []).filter(user=>!ranking(user));
     if(!candidates.length)return;
     rankJob=job;rankMessage='';schedule();
     const headers=new Headers(auth.headers), template=structuredClone(endpoint);
     const fetchRank=async(user,cursor)=>{
-      if(Date.now()<rankNextAt)await new Promise(resolve=>{
-        const timer=setTimeout(done,rankNextAt-Date.now());
+      const waitUntil=Math.max(rankNextAt,blockedUntil);
+      if(Date.now()<waitUntil){
+        if(Date.now()<blockedUntil){rankMessage='Taking a breather. Continuing when X’s allowance resets…';schedule();}
+        await new Promise(resolve=>{
+        const timer=setTimeout(done,Math.min(waitUntil-Date.now(),2147483647));
         function done(){clearTimeout(timer);job.controller.signal.removeEventListener('abort',done);resolve();}
         job.controller.signal.addEventListener('abort',done,{once:true});
       });
+      if(!job.controller.signal.aborted){rankMessage='';schedule();}
+      }
       if(job.controller.signal.aborted)throw new Error('Calculation paused.');
       if(job.requests>=300)throw new Error('Safety limit reached. Resume when ready.');
-      if(Date.now()<blockedUntil)throw new Error('Paused to preserve X’s request allowance. Try again after the cooldown.');
+
       const url=new URL(template.path,location.origin);
       if(!endpointPattern.test(url.pathname)||url.origin!==location.origin)throw new Error('Reconnect through X’s mutuals list.');
       url.searchParams.set('variables',JSON.stringify({userId:user.id,count:100,includePromotedContent:false,...(cursor?{cursor}:{})}));
@@ -190,6 +201,8 @@
         if(job.viewer!==account() || job.controller.signal.aborted)break;
         ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
         while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
+        job.sinceSort++;
+        if(job.sinceSort>=4 || performance.now()-job.lastSort>=4000)updateRankOrder();
         rankVersion++;schedule();
         if(!result.complete && !/page limit/.test(result.reason)){rankMessage=result.reason;break;}
       }
@@ -252,6 +265,8 @@
     if (signature === nextSignature) return;
     signature = nextSignature;
     host.style.cssText = dark ? `--paper:${background};--text:#e7e9ea;--muted:#71767b;--line:${rgb[0]>8?'#38444d':'#2f3336'};--hover:rgba(255,255,255,.03)` : '--paper:#fff;--text:#0f1419;--muted:#536471;--line:#eff3f4;--hover:rgba(0,0,0,.025)';
+    const focusedControl=root.activeElement?.tagName==='BUTTON'?{label:root.activeElement.getAttribute('aria-label'),text:root.activeElement.textContent}:null;
+    const focusedPerson=root.activeElement?.closest('.person')?.getAttribute('href');
     const oldInput = root.querySelector('.search-input');
     const restoreFocus = root.activeElement === oldInput && Boolean(oldInput);
     const selection = oldInput ? [oldInput.selectionStart,oldInput.selectionEnd] : null;
@@ -269,7 +284,7 @@
     searchButton.onclick=()=>{searchOpen=true;focusSearch=true;signature='';schedule();};
     top.append(title,countLabel,searchButton,close); heading.append(top);
     const subtitle = el('div','subtitle'); subtitle.append(el('span','','Mutuals with ')); const target = el('a','',`@${p.handle}`); target.href=`/${p.handle}`; subtitle.append(target); heading.append(subtitle);
-    const people = el('div','people'); people.setAttribute('aria-label','Mutual connections');
+    const people = el('div','people'); people.setAttribute('aria-label','Mutual connections');people.addEventListener('mouseleave',()=>{if(rankJob?.sinceSort)updateRankOrder();});people.addEventListener('focusout',()=>queueMicrotask(()=>{if(rankJob?.sinceSort)updateRankOrder();}));
     if(searchOpen){
       const searchBox=el('div','search-box'), input=el('input','search-input'); input.type='search';input.placeholder='Find a name or @handle';input.setAttribute('aria-label','Search mutuals');input.value=query;input.maxLength=100;
       input.oninput=()=>{query=input.value;visibleRows=100;schedule();};
@@ -293,7 +308,7 @@
         progress.append(info,button);controls.append(progress);
         const track=el('div','rank-track'),fill=el('div','rank-fill');fill.style.width=`${checked/record.users.length*100}%`;track.append(fill);controls.append(track);
         const partial=record.users.some(user=>ranking(user)&&!ranking(user).complete);
-        controls.append(el('div','rank-detail',rankMessage || (rankJob?'One at a time. Sorted when ready.':partial?'Sorted by known counts · + means at least':'People in your circle who follow each person.')));
+        controls.append(el('div','rank-detail',rankMessage || (rankJob?'Counts arrive one by one. Order updates gently.':partial?'Sorted by known counts · + means at least':'People in your circle who follow each person.')));
 
       }
       heading.append(controls);
@@ -328,6 +343,8 @@
     action.disabled=!running && (Boolean(rankJob) || Date.now()<blockedUntil || Boolean(record && Date.now()-record.time<10000));
     action.onclick=()=>{if(running)active.controller.abort();else if(auth&&profiles.has(p.handle))run(p.handle);else location.reload();};
     footer.append(state,action);panel.append(heading,people,footer);root.append(panel);people.scrollTop=previousScroll;
+    if(focusedControl){[...root.querySelectorAll('button')].find(n=>focusedControl.label?n.getAttribute('aria-label')===focusedControl.label:n.textContent===focusedControl.text)?.focus({preventScroll:true});}
+    if(focusedPerson){[...root.querySelectorAll('.person')].find(n=>n.getAttribute('href')===focusedPerson)?.focus({preventScroll:true});}
     if(searchOpen && (focusSearch || restoreFocus)){const input=root.querySelector('.search-input');input.focus({preventScroll:true});if(restoreFocus && selection?.[0]!=null)input.setSelectionRange(...selection);focusSearch=false;}
     if(action.disabled) setTimeout(()=>{if(action.isConnected)action.disabled=Boolean(rankJob)||Date.now()<blockedUntil;},Math.max(10000,blockedUntil-Date.now()));
   }

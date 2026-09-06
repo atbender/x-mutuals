@@ -33,7 +33,7 @@ Requires Firefox engine 140+. Temporary add-ons disappear when the browser resta
 
 The number next to each person means **how many accounts you follow also follow that person**. It is not their follower count or their connections to everyone in the sidebar.
 
-Checked people sort from highest known count to lowest; unchecked people show `—` and stay below them. Ordering updates when calculation finishes or pauses so rows do not jump during calculation. `20+` means at least 20, not an exact total. A partial ranking is not a definitive top list. Each person is checked for up to two pages. Incomplete results are not automatically expanded; opening that person’s profile can produce a fuller cached count. Result caches last five minutes and are cleared on reload or account change.
+Checked people sort from highest known count to lowest; unchecked people show `—` and stay below them. Ordering updates after four completed people or four seconds of progress, and waits while you hover over the list or focus a person. `20+` means at least 20, not an exact total. A partial ranking is not a definitive top list. Each person is checked for up to two pages. Incomplete results are not automatically expanded; opening that person’s profile can produce a fuller cached count. Result caches last five minutes and are cleared on reload or account change.
 
 ## Update or remove
 
@@ -47,6 +47,6 @@ After downloading an update, extract it over the folder you loaded. On the exten
 
 **Partial count or `+`:** X may have limited requests, returned unavailable accounts, or reached this extension’s page budget. Available results remain visible. Rate limits enforce a cooldown; repeatedly clicking does not bypass it.
 
-**Ranking paused:** wait for the cooldown, then select Resume. Requests adapt to X’s reported allowance and stop with five requests in reserve. Without rate headers, the queue waits one second after each response. Errors do not trigger automatic retries. A run stops after 300 requests as a safety limit. Same-origin tabs coordinate ranking through Web Locks where supported; other X traffic and other devices still consume allowance.
+**Taking a breather:** no click is needed. Requests adapt to X’s reported allowance, wait with five requests in reserve, and continue automatically after the reset. **Ranking paused after an error:** wait for the cooldown, then select Resume. Without rate headers, the queue waits one second after each response. Errors do not trigger automatic retries. A run stops after 300 requests as a safety limit. Same-origin tabs coordinate ranking through Web Locks where supported; other X traffic and other devices still consume allowance.
 
 **Theme or layout conflict:** other X styling extensions can affect the available space. Mutuals uses the page background and an isolated sidebar, but unusually narrow layouts may cover part of X. Collapse the panel when needed.
