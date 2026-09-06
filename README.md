@@ -4,6 +4,22 @@ A quiet sidebar for X. Open a profile and see the people you follow who also fol
 
 Vanilla JavaScript. No dependencies, backend, API key, analytics, or sign-up.
 
+![Mutuals walkthrough: open the minimized pill, view eight people, select Most connected, and calculate their counts](docs/walkthrough.gif)
+
+Minimized pill → mutual list → **Most connected** → **Check a batch**.
+
+*Recorded with the production extension UI over an anonymized screenshot of X. All displayed identities and ranking counts are fictional demo data. No developer tools or logs are shown.*
+
+**[Download](https://github.com/atbender/x-mutuals/releases/latest)** · **[Install and use](INSTALL.md)**
+
+| Browser | Build | Validation |
+| --- | --- | --- |
+| Zen / Firefox engine 140+ | Firefox ZIP; temporary add-on | Live mutual lookup tested in Zen |
+| Chrome / Edge / Brave, Chromium 120+ | Chrome ZIP; load unpacked | Script integration tested; native installation unverified |
+| Firefox Android 142+ | Firefox manifest target | Not tested; desktop instructions below |
+| Safari | No build | Not supported |
+
+
 ## Install
 
 **[Step-by-step installation and usage guide](INSTALL.md)** · **[Download browser ZIPs](https://github.com/atbender/x-mutuals/releases/latest)**
