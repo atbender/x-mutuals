@@ -1,0 +1,37 @@
+# Validation — 2026-09-06
+
+## Automated
+
+Node tests cover ID deduplication, cursor pagination, short pages, empty versus malformed responses, GraphQL errors, HTTP failure lower bounds, repeated cursors, unavailable users, cancellation, the page cap, fuzzy search, and safe user normalization. Cancellation and the cap assert that no unnecessary continuation is sent.
+
+## Live X, installed extension in Zen
+
+Tested through Computer Use with an existing signed-in session. No live account names, IDs, response dumps, or screenshots are included in this repository.
+
+- Automatic profile sidebar displayed a count of 2 and two vertical user rows, matching the native X mutuals list.
+- The profile check used 1 additional connection API request and took approximately 0.4 seconds after starting (excluding page load and the 600 ms debounce).
+- The updated extension opened its local finder with Command-F on live X.
+- Sidebar visually matched X’s dark background and border palette.
+- The earlier inline version verified native-response reuse: a complete first page needed 0 extra requests; another list with 72 unique accounts needed 1 continuation, approximately 1.3 seconds after the native first response. The sidebar uses that same parser and pagination mechanism.
+
+These are individual observations, not guaranteed latency or completeness across accounts.
+
+## Controlled Chromium browser
+
+Computer Use exercised the production scripts in the in-app browser against synthetic responses:
+
+- Automatic profile loading produced 4 distinct users from 2 overlapping pages, with 2 API requests total.
+- Collapse, reopen, theme switch, and cached profile navigation added no connection requests.
+
+- A rate limit on page 2 preserved `2+`, stopped at 2 requests, and displayed the cooldown state.
+- The search icon opened the finder; `smpl 3` returned only the matching synthetic person without increasing the 2-request total.
+
+- A 120-person fixture stayed in a 416px scroll container. Searching `sample_120` found a person beyond the first 100 rendered rows, with no additional requests.
+- Escape closed the finder and Command-F reopened it.
+- Final validation: 11 Node tests passed; Firefox web-ext lint reported zero errors, notices, or warnings.
+
+This checks browser UI and script integration, not installed Chrome-extension behavior or live Chrome authorization.
+
+## Limits
+
+Chrome and standalone Firefox native windows were unavailable to Computer Use. The installed live test used Zen’s Firefox engine. Chrome/Edge/Brave manifests are built, but installation in those browsers is not yet verified. Safari and Android were not tested.
