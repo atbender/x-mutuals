@@ -1,6 +1,6 @@
 {
   "name": "mutuals-extension",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "scripts": { "test": "node --test tests/*.test.cjs", "build": "node tools/build.cjs" }
 }

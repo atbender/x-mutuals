@@ -142,8 +142,6 @@
   }
   function updateRankOrder() {
     if(!rankJob)return;
-    const list=root?.querySelector('.people');
-    if(list?.matches(':hover') || root?.activeElement?.closest('.person'))return;
     rankJob.order=new Map([...(records.get(rankJob.handle)?.users ?? [])].sort(compareRanks).map((user,index)=>[user.id,index]));
     rankJob.sinceSort=0;rankJob.lastSort=performance.now();rankVersion++;schedule();
   }
@@ -202,7 +200,7 @@
         ranks.set(user.id,{count:result.count,complete:result.complete,time:Date.now(),reason:result.reason});
         while(ranks.size>1000)ranks.delete(ranks.keys().next().value);
         job.sinceSort++;
-        if(job.sinceSort>=4 || performance.now()-job.lastSort>=4000)updateRankOrder();
+        updateRankOrder();
         rankVersion++;schedule();
         if(!result.complete && !/page limit/.test(result.reason)){rankMessage=result.reason;break;}
       }
@@ -308,7 +306,7 @@
         progress.append(info,button);controls.append(progress);
         const track=el('div','rank-track'),fill=el('div','rank-fill');fill.style.width=`${checked/record.users.length*100}%`;track.append(fill);controls.append(track);
         const partial=record.users.some(user=>ranking(user)&&!ranking(user).complete);
-        controls.append(el('div','rank-detail',rankMessage || (rankJob?'Counts arrive one by one. Order updates gently.':partial?'Sorted by known counts · + means at least':'People in your circle who follow each person.')));
+        if(rankMessage || partial)controls.append(el('div','rank-detail',rankMessage || 'Partial counts shown with +'));
 
       }
       heading.append(controls);

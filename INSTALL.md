@@ -33,7 +33,7 @@ Requires Firefox engine 140+. Temporary add-ons disappear when the browser resta
 
 The number next to each person means **how many accounts you follow also follow that person**. It is not their follower count or their connections to everyone in the sidebar.
 
-Checked people sort from highest known count to lowest; unchecked people show `—` and stay below them. Ordering updates after four completed people or four seconds of progress, and waits while you hover over the list or focus a person. `20+` means at least 20, not an exact total. A partial ranking is not a definitive top list. Each person is checked for up to two pages. Incomplete results are not automatically expanded; opening that person’s profile can produce a fuller cached count. Result caches last five minutes and are cleared on reload or account change.
+Checked people sort from highest known count to lowest; unchecked people show `—` and stay below them. Ordering updates immediately as each person’s count arrives. `20+` means at least 20, not an exact total. A partial ranking is not a definitive top list. Each person is checked for up to two pages. Incomplete results are not automatically expanded; opening that person’s profile can produce a fuller cached count. Result caches last five minutes and are cleared on reload or account change.
 
 ## Update or remove
 
