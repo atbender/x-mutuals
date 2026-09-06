@@ -199,7 +199,7 @@
     searchButton.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>';
     searchButton.onclick=()=>{searchOpen=true;focusSearch=true;signature='';schedule();};
     top.append(title,countLabel,searchButton,close); heading.append(top);
-    const subtitle = el('div','subtitle'); subtitle.append(el('span','','You follow them. They follow ')); const target = el('a','',`@${p.handle}`); target.href=`/${p.handle}`; subtitle.append(target); heading.append(subtitle);
+    const subtitle = el('div','subtitle'); subtitle.append(el('span','','Mutuals with ')); const target = el('a','',`@${p.handle}`); target.href=`/${p.handle}`; subtitle.append(target); heading.append(subtitle);
     const people = el('div','people'); people.setAttribute('aria-label','Mutual connections');
     if(searchOpen){
       const searchBox=el('div','search-box'), input=el('input','search-input'); input.type='search';input.placeholder='Find a name or @handle';input.setAttribute('aria-label','Search mutuals');input.value=query;input.maxLength=100;
