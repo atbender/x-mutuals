@@ -1,4 +1,6 @@
-# Walkthrough assets
+# Preview and walkthrough assets
+
+`mutuals-preview.png` is the user-provided screenshot featured in the main README. Names, handles, and avatars are blurred. Embedded text, EXIF, and timestamp metadata are excluded from the published PNG.
 
 `walkthrough.gif` is assembled from four screenshots of the production sidebar UI in the local documentation fixture. The background is `x-open.jpg`, a screenshot captured on X after names, handles, profile imagery, posts, and signed-in identity were masked locally. The eight foreground names, handles, and ranking counts are fictional. These assets do not establish live ranking performance.
 
